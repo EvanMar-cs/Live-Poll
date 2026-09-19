@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Host Panel</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<main>
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">KTP Recruitment</p>
+            <h1 class="panel-title">Host Panel</h1>
+        </div>
+        <a class="logout-link" href="{{ url_for('logout') }}">Log out</a>
+    </div>
+
+    <div class="navigation-card">
+        <div class="navigation-topline">
+            <span>Closed Rush Applicants</span>
+            <span id="applicant-count" class="applicant-count">Loading...</span>
+        </div>
+
+        <div class="navigation">
+            <button id="previous-button" class="arrow-button" onclick="previousApplicant()" aria-label="Previous applicant">&#8592;</button>
+            <select id="applicant-select" onchange="selectApplicant(this.value)" aria-label="Select applicant"></select>
+            <button id="next-button" class="arrow-button" onclick="nextApplicant()" aria-label="Next applicant">&#8594;</button>
+        </div>
+
+        <button id="refresh-button" class="secondary-button" onclick="refreshApplicants()">Refresh Closed Rush List</button>
+        <p id="refresh-status" class="refresh-status"></p>
+    </div>
+
+    <div class="host-controls">
+        <button id="vote-toggle-button" class="host-button" onclick="toggleVote()">Start Vote</button>
+    </div>
+
+    <div class="applicant-display">
+        <h2 id="applicant-name">Waiting for applicants...</h2>
+        <div class="headshot-wrapper">
+            <img id="applicant-photo" class="headshot" src="" alt="" style="display:none;">
+            <p id="no-headshot-msg" class="no-headshot" style="display:none;">No headshot available.</p>
+        </div>
+
+        <div class="info-boxes">
+            <button class="info-box" onclick="openModal('forms')">Forms</button>
+            <button class="info-box" onclick="openModal('essays')">Essays</button>
+            <button class="info-box" onclick="openModal('attendance')">Attendance</button>
+            <button class="info-box" onclick="openModal('scores')">Scores</button>
+        </div>
+    </div>
+
+    <div class="tally">
+        <div class="tally-header">Current Vote Tally</div>
+        <div class="tally-row"><span>Yes</span><span id="tally-yes">0</span></div>
+        <div class="tally-row"><span>No</span><span id="tally-no">0</span></div>
+        <div class="tally-row"><span>Maybe</span><span id="tally-maybe">0</span></div>
+    </div>
+
+    <div id="profile-modal" class="modal-overlay" onclick="closeModalIfBackground(event)">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+            <h2 id="modal-title"></h2>
+            <div id="modal-entries" class="modal-entries"></div>
+        </div>
+    </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const socket = io({
+    transports: ["polling"]
+});
+
+let applicants = [];
+let currentIndex = 0;
+let votingOpen = false;
+let currentApplicantName = "";
+let preloadedHeadshots = {};
+
+socket.on("state_update", (state) => {
+    applicants = state.applicants || [];
+    currentIndex = state.current_index || 0;
+    votingOpen = !!state.voting_open;
+
+    populateDropdown();
+    preloadHeadshots();
+    renderApplicant();
+    renderTally(state.votes || {});
+    updateApplicantCount();
+    updateArrowButtons();
+    updateVoteButton();
+});
+
+socket.on("applicants_refreshed", () => {
+    document.getElementById("refresh-status").textContent = "Closed Rush list refreshed.";
+    setTimeout(() => {
+        document.getElementById("refresh-status").textContent = "";
+    }, 2500);
+});
+
+socket.on("applicants_refresh_error", (data) => {
+    document.getElementById("refresh-status").textContent = "Refresh failed: " + (data.message || "Unknown error");
+});
+
+function populateDropdown() {
+    const select = document.getElementById("applicant-select");
+    select.innerHTML = "";
+
+    applicants.forEach((a) => {
+        const opt = document.createElement("option");
+        opt.value = a.index;
+        opt.textContent = a.name;
+        select.appendChild(opt);
+    });
+
+    select.disabled = applicants.length === 0;
+    if (applicants.length) {
+        select.value = currentIndex;
+    }
+}
+
+function preloadHeadshots() {
+    applicants.forEach((applicant) => {
+        if (!applicant.headshot || preloadedHeadshots[applicant.index]) {
+            return;
+        }
+
+        const img = new Image();
+        img.src = applicant.headshot;
+        preloadedHeadshots[applicant.index] = img;
+    });
+}
+
+function renderApplicant() {
+    const applicant = applicants[currentIndex];
+    const name = document.getElementById("applicant-name");
+    const photo = document.getElementById("applicant-photo");
+    const noPhotoMsg = document.getElementById("no-headshot-msg");
+
+    if (!applicant) {
+        currentApplicantName = "";
+        name.textContent = "No Closed Rush applicants";
+        photo.style.display = "none";
+        photo.src = "";
+        noPhotoMsg.style.display = "block";
+        return;
+    }
+
+    currentApplicantName = applicant.name;
+    name.textContent = applicant.name;
+
+    if (applicant.headshot) {
+        photo.src = applicant.headshot;
+        photo.alt = "Headshot of " + applicant.name;
+        photo.style.display = "block";
+        noPhotoMsg.style.display = "none";
+    } else {
+        photo.style.display = "none";
+        photo.src = "";
+        noPhotoMsg.style.display = "block";
+    }
+}
+
+function renderTally(votes) {
+    document.getElementById("tally-yes").textContent = votes.yes || 0;
+    document.getElementById("tally-no").textContent = votes.no || 0;
+    document.getElementById("tally-maybe").textContent = votes.maybe || 0;
+}
+
+function updateApplicantCount() {
+    const count = applicants.length;
+    document.getElementById("applicant-count").textContent =
+        count === 0 ? "None found" : `${count} applicant${count === 1 ? "" : "s"}`;
+}
+
+function updateArrowButtons() {
+    document.getElementById("previous-button").disabled = applicants.length === 0 || currentIndex === 0;
+    document.getElementById("next-button").disabled = applicants.length === 0 || currentIndex === applicants.length - 1;
+}
+
+function updateVoteButton() {
+    const button = document.getElementById("vote-toggle-button");
+    button.textContent = votingOpen ? "End Vote" : "Start Vote";
+    button.disabled = applicants.length === 0;
+}
+
+function goToApplicant(index) {
+    if (!applicants.length) return;
+    socket.emit("host_go_to_applicant", { index: Number(index) });
+}
+
+function selectApplicant(index) { goToApplicant(index); }
+function previousApplicant() { if (currentIndex > 0) goToApplicant(currentIndex - 1); }
+function nextApplicant() { if (currentIndex < applicants.length - 1) goToApplicant(currentIndex + 1); }
+function refreshApplicants() { socket.emit("host_refresh_applicants"); }
+
+function toggleVote() {
+    if (votingOpen) socket.emit("host_end_vote");
+    else socket.emit("host_start_vote");
+}
+
+const CATEGORY_LABELS = {
+    forms: "Forms",
+    essays: "Essays",
+    attendance: "Attendance",
+    scores: "Scores"
+};
+
+function openModal(category) {
+    if (!currentApplicantName) return;
+
+    const modal = document.getElementById("profile-modal");
+    const container = document.getElementById("modal-entries");
+
+    container.innerHTML = "<p>Loading...</p>";
+    document.getElementById("modal-title").textContent = currentApplicantName + " — " + CATEGORY_LABELS[category];
+    modal.style.display = "flex";
+
+    fetch(`/api/applicant/${encodeURIComponent(currentApplicantName)}/profile`)
+        .then(res => {
+            if (!res.ok) throw new Error("Request failed");
+            return res.json();
+        })
+        .then(data => {
+            const entries = data[category] || [];
+            container.innerHTML = "";
+
+            if (entries.length === 0) {
+                container.innerHTML = "<p>Nothing found in this category.</p>";
+                return;
+            }
+
+            entries.forEach(entry => {
+                const block = document.createElement("div");
+                block.className = "modal-entry";
+
+                const question = document.createElement("p");
+                question.className = "modal-question";
+                question.textContent = entry.question;
+
+                const answer = document.createElement("p");
+                answer.className = "modal-answer";
+                answer.textContent = entry.answer;
+
+                block.appendChild(question);
+                block.appendChild(answer);
+                container.appendChild(block);
+            });
+        })
+        .catch(() => {
+            container.innerHTML = "<p>Could not load this applicant's information.</p>";
+        });
+}
+
+function closeModal() {
+    document.getElementById("profile-modal").style.display = "none";
+}
+
+function closeModalIfBackground(event) {
+    if (event.target.id === "profile-modal") closeModal();
+}
+</script>
+
+</body>
+</html>

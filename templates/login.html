@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>Admin Login</title>
+
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='style.css') }}"
+>
+
+</head>
+
+<body>
+
+<main class="login-page">
+
+    <section class="login-card">
+
+        <p class="eyebrow">
+            KTP Recruitment
+        </p>
+
+        <h1>
+            Host Panel
+        </h1>
+
+        <p class="login-subtitle">
+            Enter the admin password to continue.
+        </p>
+
+
+        {% if error %}
+
+            <p class="login-error">
+                {{ error }}
+            </p>
+
+        {% endif %}
+
+
+        <form
+            method="POST"
+            class="login-form"
+        >
+
+            <input
+                type="password"
+                name="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                autofocus
+                required
+            >
+
+            <button
+                type="submit"
+                class="host-button"
+            >
+                Log In
+            </button>
+
+        </form>
+
+    </section>
+
+</main>
+
+</body>
+</html>
