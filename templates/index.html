@@ -1,431 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Live Poll</title>
-
-<link
-    rel="stylesheet"
-    href="{{ url_for('static', filename='style.css') }}"
->
-
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
 
 <main>
-
     <div class="applicant-display">
-
-        <h1 id="applicant-name">
-            Waiting for host...
-        </h1>
-
-
+        <h1 id="applicant-name">Waiting for host...</h1>
         <div class="headshot-wrapper">
-
-            <img
-                id="applicant-photo"
-                class="headshot"
-                src=""
-                alt=""
-                style="display:none;"
-            >
-
-            <p
-                id="no-headshot-msg"
-                class="no-headshot"
-                style="display:none;"
-            >
-                No headshot available.
-            </p>
-
+            <img id="applicant-photo" class="headshot" src="" alt="" style="display:none;">
+            <p id="no-headshot-msg" class="no-headshot" style="display:none;">No headshot available.</p>
         </div>
-
 
         <div class="info-boxes">
-
-            <button
-                class="info-box"
-                onclick="openModal('forms')"
-            >
-                Forms
-            </button>
-
-            <button
-                class="info-box"
-                onclick="openModal('essays')"
-            >
-                Essays
-            </button>
-
-            <button
-                class="info-box"
-                onclick="openModal('attendance')"
-            >
-                Attendance
-            </button>
-
-            <button
-                class="info-box"
-                onclick="openModal('scores')"
-            >
-                Scores
-            </button>
-
+            <button class="info-box" onclick="openModal('forms')">Forms</button>
+            <button class="info-box" onclick="openModal('essays')">Essays</button>
+            <button class="info-box" onclick="openModal('attendance')">Attendance</button>
+            <button class="info-box" onclick="openResume()">Resume</button>
         </div>
-
     </div>
 
-
-    <div
-        id="vote-panel"
-        class="vote-panel"
-        style="display:none;"
-    >
-
-        <button
-            class="vote-button vote-yes"
-            onclick="castVote('yes')"
-        >
-            Yes
-        </button>
-
-        <button
-            class="vote-button vote-no"
-            onclick="castVote('no')"
-        >
-            No
-        </button>
-
-        <button
-            class="vote-button vote-maybe"
-            onclick="castVote('maybe')"
-        >
-            Maybe
-        </button>
-
+    <div id="vote-panel" class="vote-panel" style="display:none;">
+        <button class="vote-button vote-yes" onclick="castVote('yes')">Yes</button>
+        <button class="vote-button vote-no" onclick="castVote('no')">No</button>
+        <button class="vote-button vote-maybe" onclick="castVote('maybe')">Maybe</button>
     </div>
 
+    <p id="vote-status" class="vote-status"></p>
 
-    <p
-        id="vote-status"
-        class="vote-status"
-    ></p>
-
-
-    <div
-        id="profile-modal"
-        class="modal-overlay"
-        onclick="closeModalIfBackground(event)"
-    >
-
+    <div id="profile-modal" class="modal-overlay" onclick="closeModalIfBackground(event)">
         <div class="modal-box">
-
-            <button
-                class="modal-close"
-                onclick="closeModal()"
-                aria-label="Close"
-            >
-                &times;
-            </button>
-
+            <button class="modal-close" onclick="closeModal()">&times;</button>
             <h2 id="modal-title"></h2>
-
-            <div
-                id="modal-entries"
-                class="modal-entries"
-            ></div>
-
+            <div id="modal-entries" class="modal-entries"></div>
         </div>
-
     </div>
-
 </main>
 
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
-
 <script>
-
-const socket = io({
-    transports: ["polling"]
-});
-
-
+const socket = io();
 let hasVoted = false;
 let currentApplicantName = "";
 
-
 socket.on("state_update", (state) => {
+    const applicant = state.applicants[state.current_index];
 
-    const applicant =
-        state.applicants &&
-        state.applicants[state.current_index];
-
-
-    currentApplicantName =
-        applicant
-            ? applicant.name
-            : "";
-
+    currentApplicantName = applicant ? applicant.name : "";
 
     document.getElementById("applicant-name").textContent =
-        applicant
-            ? applicant.name
-            : "Waiting for host...";
+        applicant ? applicant.name : "Waiting for host...";
 
+    const photo = document.getElementById("applicant-photo");
+    const noPhotoMsg = document.getElementById("no-headshot-msg");
 
-    const photo =
-        document.getElementById("applicant-photo");
-
-    const noPhotoMsg =
-        document.getElementById("no-headshot-msg");
-
-
-    if (
-        applicant &&
-        applicant.headshot
-    ) {
-
-        photo.src =
-            applicant.headshot;
-
-        photo.alt =
-            "Headshot of " +
-            applicant.name;
-
-        photo.style.display =
-            "block";
-
-        noPhotoMsg.style.display =
-            "none";
-
+    if (applicant && applicant.headshot) {
+        photo.src = applicant.headshot;
+        photo.alt = "Headshot of " + applicant.name;
+        photo.style.display = "block";
+        noPhotoMsg.style.display = "none";
     } else {
-
-        photo.style.display =
-            "none";
-
-        photo.src = "";
-
-        noPhotoMsg.style.display =
-            "block";
-
+        photo.style.display = "none";
+        noPhotoMsg.style.display = "block";
     }
 
-
-    const votePanel =
-        document.getElementById("vote-panel");
-
-
+    const votePanel = document.getElementById("vote-panel");
     if (state.voting_open) {
-
-        votePanel.style.display =
-            hasVoted
-                ? "none"
-                : "flex";
-
+        votePanel.style.display = hasVoted ? "none" : "flex";
     } else {
-
-        votePanel.style.display =
-            "none";
-
+        votePanel.style.display = "none";
         hasVoted = false;
-
-        document.getElementById(
-            "vote-status"
-        ).textContent = "";
-
+        document.getElementById("vote-status").textContent = "";
     }
-
 });
-
 
 socket.on("already_voted", () => {
-
     hasVoted = true;
-
-    document.getElementById(
-        "vote-panel"
-    ).style.display = "none";
-
-    document.getElementById(
-        "vote-status"
-    ).textContent =
-        "You've already voted for this applicant.";
-
+    document.getElementById("vote-panel").style.display = "none";
+    document.getElementById("vote-status").textContent = "You've already voted for this applicant.";
 });
-
 
 socket.on("vote_recorded", () => {
-
     hasVoted = true;
-
-    document.getElementById(
-        "vote-panel"
-    ).style.display = "none";
-
-    document.getElementById(
-        "vote-status"
-    ).textContent =
-        "Vote recorded — thank you!";
-
+    document.getElementById("vote-panel").style.display = "none";
+    document.getElementById("vote-status").textContent = "Vote recorded — thank you!";
 });
 
-
 function castVote(choice) {
-
-    socket.emit(
-        "submit_vote",
-        {
-            choice: choice
-        }
-    );
-
+    socket.emit("submit_vote", { choice: choice });
 }
 
-
 const CATEGORY_LABELS = {
-
     forms: "Forms",
     essays: "Essays",
     attendance: "Attendance",
-    scores: "Scores"
-
+    resume: "Resume"
 };
 
-
 function openModal(category) {
+    if (!currentApplicantName) return;
+    fetch(`/api/applicant/${encodeURIComponent(currentApplicantName)}/profile`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById("modal-title").textContent =
+                data.name + " — " + CATEGORY_LABELS[category];
 
-    if (!currentApplicantName) {
-        return;
-    }
-
-    const modal =
-        document.getElementById("profile-modal");
-
-    const container =
-        document.getElementById("modal-entries");
-
-
-    document.getElementById("modal-title").textContent =
-        currentApplicantName +
-        " — " +
-        CATEGORY_LABELS[category];
-
-    container.innerHTML =
-        "Loading...";
-
-    modal.style.display =
-        "flex";
-
-
-    fetch(
-        `/api/applicant/${encodeURIComponent(currentApplicantName)}/profile`
-    )
-
-        .then((response) => {
-
-            if (!response.ok) {
-                throw new Error("Request failed");
-            }
-
-            return response.json();
-
-        })
-
-        .then((data) => {
-
-            const entries =
-                data[category] || [];
-
+            const entries = data[category] || [];
+            const container = document.getElementById("modal-entries");
             container.innerHTML = "";
 
-
             if (entries.length === 0) {
+                container.innerHTML = "<p>Nothing found in this category.</p>";
+            } else {
+                entries.forEach(entry => {
+                    const block = document.createElement("div");
+                    block.className = "modal-entry";
+                    block.innerHTML = `<p class="modal-question">${entry.question}</p><p class="modal-answer">${entry.answer}</p>`;
+                    container.appendChild(block);
+                });
+            }
+            document.getElementById("profile-modal").style.display = "flex";
+        });
+}
 
-                container.innerHTML =
-                    "<p>Nothing found in this category.</p>";
+function openResume() {
+    if (!currentApplicantName) return;
 
+    // Open a blank tab immediately so browsers do not block it as a popup
+    // while we fetch the applicant's cached profile.
+    const resumeTab = window.open("about:blank", "_blank");
+
+    fetch(`/api/applicant/${encodeURIComponent(currentApplicantName)}/profile`)
+        .then(res => {
+            if (!res.ok) throw new Error("Could not load applicant profile.");
+            return res.json();
+        })
+        .then(data => {
+            const resumes = data.resume || [];
+
+            if (!resumes.length || !resumes[0].url) {
+                if (resumeTab) resumeTab.close();
+                alert("No resume found for this applicant.");
                 return;
             }
 
-
-            entries.forEach((entry) => {
-
-                const block =
-                    document.createElement("div");
-
-                block.className =
-                    "modal-entry";
-
-
-                const question =
-                    document.createElement("p");
-
-                question.className =
-                    "modal-question";
-
-                question.textContent =
-                    entry.question;
-
-
-                const answer =
-                    document.createElement("p");
-
-                answer.className =
-                    "modal-answer";
-
-                answer.textContent =
-                    entry.answer;
-
-
-                block.appendChild(question);
-                block.appendChild(answer);
-
-                container.appendChild(block);
-
-            });
-
+            if (resumeTab) {
+                resumeTab.location.href = resumes[0].url;
+            } else {
+                window.location.href = resumes[0].url;
+            }
         })
-
         .catch(() => {
-
-            container.innerHTML =
-                "<p>Could not load this applicant's information.</p>";
-
+            if (resumeTab) resumeTab.close();
+            alert("Could not open this applicant's resume.");
         });
-
 }
-
 
 function closeModal() {
-
-    document.getElementById(
-        "profile-modal"
-    ).style.display = "none";
-
+    document.getElementById("profile-modal").style.display = "none";
 }
-
 
 function closeModalIfBackground(event) {
-
-    if (
-        event.target.id ===
-        "profile-modal"
-    ) {
-        closeModal();
-    }
-
+    if (event.target.id === "profile-modal") closeModal();
 }
-
 </script>
 
 </body>

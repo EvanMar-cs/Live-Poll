@@ -48,7 +48,7 @@
             <button class="info-box" onclick="openModal('forms')">Forms</button>
             <button class="info-box" onclick="openModal('essays')">Essays</button>
             <button class="info-box" onclick="openModal('attendance')">Attendance</button>
-            <button class="info-box" onclick="openModal('scores')">Scores</button>
+            <button class="info-box" onclick="openResume()">Resume</button>
         </div>
     </div>
 
@@ -70,15 +70,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-const socket = io({
-    transports: ["polling"]
-});
+const socket = io();
 
 let applicants = [];
 let currentIndex = 0;
 let votingOpen = false;
 let currentApplicantName = "";
-let preloadedHeadshots = {};
 
 socket.on("state_update", (state) => {
     applicants = state.applicants || [];
@@ -86,7 +83,6 @@ socket.on("state_update", (state) => {
     votingOpen = !!state.voting_open;
 
     populateDropdown();
-    preloadHeadshots();
     renderApplicant();
     renderTally(state.votes || {});
     updateApplicantCount();
@@ -120,18 +116,6 @@ function populateDropdown() {
     if (applicants.length) {
         select.value = currentIndex;
     }
-}
-
-function preloadHeadshots() {
-    applicants.forEach((applicant) => {
-        if (!applicant.headshot || preloadedHeadshots[applicant.index]) {
-            return;
-        }
-
-        const img = new Image();
-        img.src = applicant.headshot;
-        preloadedHeadshots[applicant.index] = img;
-    });
 }
 
 function renderApplicant() {
@@ -206,7 +190,7 @@ const CATEGORY_LABELS = {
     forms: "Forms",
     essays: "Essays",
     attendance: "Attendance",
-    scores: "Scores"
+    resume: "Resume"
 };
 
 function openModal(category) {
@@ -252,6 +236,39 @@ function openModal(category) {
         })
         .catch(() => {
             container.innerHTML = "<p>Could not load this applicant's information.</p>";
+        });
+}
+
+function openResume() {
+    if (!currentApplicantName) return;
+
+    // Open a blank tab immediately so browsers do not block it as a popup
+    // while we fetch the applicant's cached profile.
+    const resumeTab = window.open("about:blank", "_blank");
+
+    fetch(`/api/applicant/${encodeURIComponent(currentApplicantName)}/profile`)
+        .then(res => {
+            if (!res.ok) throw new Error("Could not load applicant profile.");
+            return res.json();
+        })
+        .then(data => {
+            const resumes = data.resume || [];
+
+            if (!resumes.length || !resumes[0].url) {
+                if (resumeTab) resumeTab.close();
+                alert("No resume found for this applicant.");
+                return;
+            }
+
+            if (resumeTab) {
+                resumeTab.location.href = resumes[0].url;
+            } else {
+                window.location.href = resumes[0].url;
+            }
+        })
+        .catch(() => {
+            if (resumeTab) resumeTab.close();
+            alert("Could not open this applicant's resume.");
         });
 }
 

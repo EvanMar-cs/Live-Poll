@@ -127,3 +127,17 @@ main { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 60
     .modal-overlay { padding: 12px; }
     .modal-box { max-height: 90vh; padding: 24px 18px; border-radius: 14px; }
 }
+
+
+.resume-link {
+    display: inline-block;
+    margin-top: 4px;
+    color: #111827;
+    font-weight: 700;
+    text-decoration: none;
+    border-bottom: 1px solid #9ca3af;
+}
+
+.resume-link:hover {
+    border-bottom-color: #111827;
+}
