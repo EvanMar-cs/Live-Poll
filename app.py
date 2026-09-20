@@ -553,4 +553,4 @@ def handle_submit_vote(data):
 
 if __name__ == "__main__":
     load_applicants_and_profiles()
-    socketio.run(app, host="0.0.0.0", port=5001, debug=True)
+    socketio.run(app, host="0.0.0.0", port=os.getenv("PORT"), debug=True)
