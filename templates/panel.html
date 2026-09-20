@@ -122,7 +122,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-      const socket = io({ transports: ["polling"], upgrade: false });
+      const socket = io({ transports: ["websocket"], upgrade: false });
 
       let applicants = [];
       let currentIndex = 0;
