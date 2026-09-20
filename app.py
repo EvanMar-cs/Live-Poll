@@ -19,6 +19,7 @@ socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
 api = Api(os.getenv("AIRTABLE_TOKEN"))
 BASE_ID = "appT97E7YHDPXi6IW"
+SCORE_FIELD_ALIASES = {}
 
 APPLICANTS_TABLE_ID = "tblktZGcswxO2Ksib"  # Fall '26 Applications
 applicants_table = api.table(BASE_ID, APPLICANTS_TABLE_ID)
@@ -551,6 +552,15 @@ def handle_submit_vote(data):
     emit("state_update", public_state(), broadcast=True)
 
 
+def initialize_applicants():
+    try:
+        load_applicants_and_profiles()
+    except Exception as exc:
+        print(f"Initial applicant load failed: {exc}")
+
+
+initialize_applicants()
+
+
 if __name__ == "__main__":
-    load_applicants_and_profiles()
     socketio.run(app, host="0.0.0.0", port=os.getenv("PORT"), debug=True)
