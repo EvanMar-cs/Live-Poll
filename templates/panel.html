@@ -97,11 +97,25 @@
       <div class="tally">
         <div class="tally-header">Current Vote Tally</div>
         <div class="tally-row">
-          <span>Yes</span><span id="tally-yes">0</span>
+          <span>Yes</span
+          ><span
+            ><strong id="tally-yes">0</strong
+            ><small id="tally-yes-percent">0%</small></span
+          >
         </div>
-        <div class="tally-row"><span>No</span><span id="tally-no">0</span></div>
         <div class="tally-row">
-          <span>Maybe</span><span id="tally-maybe">0</span>
+          <span>No</span
+          ><span
+            ><strong id="tally-no">0</strong
+            ><small id="tally-no-percent">0%</small></span
+          >
+        </div>
+        <div class="tally-row">
+          <span>Maybe</span
+          ><span
+            ><strong id="tally-maybe">0</strong
+            ><small id="tally-maybe-percent">0%</small></span
+          >
         </div>
       </div>
 
@@ -212,9 +226,19 @@
       }
 
       function renderTally(votes) {
-        document.getElementById("tally-yes").textContent = votes.yes || 0;
-        document.getElementById("tally-no").textContent = votes.no || 0;
-        document.getElementById("tally-maybe").textContent = votes.maybe || 0;
+        const counts = {
+          yes: Number(votes.yes) || 0,
+          no: Number(votes.no) || 0,
+          maybe: Number(votes.maybe) || 0,
+        };
+        const total = counts.yes + counts.no + counts.maybe;
+
+        Object.entries(counts).forEach(([choice, count]) => {
+          const percentage = total ? Math.round((count / total) * 100) : 0;
+          document.getElementById(`tally-${choice}`).textContent = count;
+          document.getElementById(`tally-${choice}-percent`).textContent =
+            `${percentage}%`;
+        });
       }
 
       function updateApplicantCount() {

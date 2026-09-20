@@ -70,7 +70,7 @@ FORM_TABLES = [
         "Other comments",
     ], "category": "forms"},
     {"id": "tblNLc33axauq0KaX", "label": "Conflict", "match_field": "PMN Name FIRST and LAST you have conflict with (You know prior to them rushing)", "show_fields": ["Active Name"], "category": "forms"},
-    {"id": "tblkOoYy9BCSb5zon", "label": "Red Flag", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this red flag form?", "Active Name"], "category": "forms"},
+    {"id": "tblkOoYy9BCSb5zon", "label": "Red Flag", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this red flag form?"], "category": "forms"},
     {"id": "tbl49XYiXic469hdk", "label": "Standout", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this standout form?", "Active Name"], "category": "forms"},
     {"id": "tblDQrFspmSsaEhMj", "label": "Event Attendance", "match_field": "Full Name (first and last)", "show_fields": ["Event Name", "Event Date", "Date"], "category": "attendance"},
 ]
