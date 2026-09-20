@@ -142,6 +142,15 @@
         updateVoteButton();
       });
 
+      // Without this the page sits on "Loading..." forever when the websocket
+      // cannot connect. A successful reconnect gets fresh state from the server.
+      function showDisconnected() {
+        document.getElementById("applicant-count").textContent =
+          "Disconnected, retrying...";
+      }
+      socket.on("connect_error", showDisconnected);
+      socket.on("disconnect", showDisconnected);
+
       socket.on("applicants_refreshed", () => {
         document.getElementById("refresh-status").textContent =
           "Closed Rush list refreshed.";

@@ -16,8 +16,10 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
-# Threading is intentional. The browser uses polling so the app does not
-# depend on an eventlet/gevent WebSocket stack.
+# Threading is intentional so the app does not depend on an eventlet/gevent
+# stack. The browser connects with websocket-only transport, which needs no
+# sticky sessions across workers. Run under gunicorn's gthread worker (see
+# gunicorn.conf.py); the default sync worker cannot serve websockets.
 REDIS_URL = os.getenv("REDIS_URL") or os.getenv("SOCKETIO_MESSAGE_QUEUE")
 redis_client = redis.Redis.from_url(REDIS_URL) if REDIS_URL else None
 socketio = SocketIO(
@@ -648,4 +650,4 @@ initialize_applicants()
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=os.getenv("PORT"), debug=True)
+    socketio.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)

@@ -99,6 +99,18 @@
         }
       });
 
+      const DISCONNECTED_MSG = "Connection lost. Reconnecting...";
+
+      function showDisconnected() {
+        document.getElementById("vote-status").textContent = DISCONNECTED_MSG;
+      }
+      socket.on("connect_error", showDisconnected);
+      socket.on("disconnect", showDisconnected);
+      socket.on("connect", () => {
+        const status = document.getElementById("vote-status");
+        if (status.textContent === DISCONNECTED_MSG) status.textContent = "";
+      });
+
       socket.on("already_voted", () => {
         hasVoted = true;
         document.getElementById("vote-panel").style.display = "none";
