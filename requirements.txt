@@ -1,0 +1,6 @@
+Flask
+Flask-SocketIO
+pyairtable
+python-dotenv
+gunicorn
+redis
