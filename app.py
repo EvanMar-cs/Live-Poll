@@ -1,5 +1,7 @@
 import os
 import uuid
+import json
+from contextlib import nullcontext
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -7,18 +9,33 @@ from flask import Flask, render_template, request, redirect, session, url_for, j
 from flask_socketio import SocketIO, emit
 from pyairtable import Api
 from dotenv import load_dotenv
+import redis
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
-# Threading is intentional. The browser uses polling so the app does not
-# depend on an eventlet/gevent WebSocket stack.
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
+# Threading is intentional so the app does not depend on an eventlet/gevent
+# stack. The browser connects with websocket-only transport, which needs no
+# sticky sessions across workers. Run under gunicorn's gthread worker (see
+# gunicorn.conf.py); the default sync worker cannot serve websockets.
+REDIS_URL = os.getenv("REDIS_URL") or os.getenv("SOCKETIO_MESSAGE_QUEUE")
+redis_client = redis.Redis.from_url(REDIS_URL) if REDIS_URL else None
+socketio = SocketIO(
+    app,
+    async_mode="threading",
+    cors_allowed_origins="*",
+    message_queue=REDIS_URL,
+)
+
+STATE_KEY = "live-poll:state"
+PROFILE_CACHE_KEY = "live-poll:profile-cache"
+STATE_LOCK_KEY = "live-poll:state-lock"
 
 api = Api(os.getenv("AIRTABLE_TOKEN"))
 BASE_ID = "appT97E7YHDPXi6IW"
+SCORE_FIELD_ALIASES = {}
 
 APPLICANTS_TABLE_ID = "tblktZGcswxO2Ksib"  # Fall '26 Applications
 applicants_table = api.table(BASE_ID, APPLICANTS_TABLE_ID)
@@ -53,7 +70,7 @@ FORM_TABLES = [
         "Other comments",
     ], "category": "forms"},
     {"id": "tblNLc33axauq0KaX", "label": "Conflict", "match_field": "PMN Name FIRST and LAST you have conflict with (You know prior to them rushing)", "show_fields": ["Active Name"], "category": "forms"},
-    {"id": "tblkOoYy9BCSb5zon", "label": "Red Flag", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this red flag form?", "Active Name"], "category": "forms"},
+    {"id": "tblkOoYy9BCSb5zon", "label": "Red Flag", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this red flag form?"], "category": "forms"},
     {"id": "tbl49XYiXic469hdk", "label": "Standout", "match_field": "PNM Full Name", "show_fields": ["Why are you filling out this standout form?", "Active Name"], "category": "forms"},
     {"id": "tblDQrFspmSsaEhMj", "label": "Event Attendance", "match_field": "Full Name (first and last)", "show_fields": ["Event Name", "Event Date", "Date"], "category": "attendance"},
 ]
@@ -67,6 +84,50 @@ state = {
 }
 
 profile_cache = {}
+
+
+def sync_shared_state():
+    if not redis_client:
+        return
+
+    payload = redis_client.get(STATE_KEY)
+    if not payload:
+        return
+
+    saved = json.loads(payload)
+    state["applicants"] = saved.get("applicants", [])
+    state["current_index"] = saved.get("current_index", 0)
+    state["voting_open"] = saved.get("voting_open", False)
+    state["votes"] = saved.get("votes", {"yes": 0, "no": 0, "maybe": 0})
+    state["voted_this_round"] = {
+        voter_id.decode() if isinstance(voter_id, bytes) else voter_id
+        for voter_id in redis_client.smembers(f"{STATE_KEY}:voters")
+    }
+
+
+def save_shared_state():
+    if not redis_client:
+        return
+
+    redis_client.set(
+        STATE_KEY,
+        json.dumps({
+            "applicants": state["applicants"],
+            "current_index": state["current_index"],
+            "voting_open": state["voting_open"],
+            "votes": state["votes"],
+        }),
+    )
+    voters_key = f"{STATE_KEY}:voters"
+    redis_client.delete(voters_key)
+    if state["voted_this_round"]:
+        redis_client.sadd(voters_key, *state["voted_this_round"])
+
+
+def shared_state_lock():
+    if not redis_client:
+        return nullcontext()
+    return redis_client.lock(STATE_LOCK_KEY, timeout=30)
 
 
 def normalize_space(value):
@@ -357,11 +418,14 @@ def build_profile_cache(closed_records):
                     })
 
     profile_cache = cache
+    if redis_client:
+        redis_client.set(PROFILE_CACHE_KEY, json.dumps(profile_cache))
     print(f"Profile cache ready for {len(profile_cache)} applicants.")
 
 
 def load_applicants_and_profiles():
     print("Loading Fall '26 Applications...")
+    sync_shared_state()
 
     records = applicants_table.all()
     print(f"Airtable returned {len(records)} application records.")
@@ -396,9 +460,11 @@ def load_applicants_and_profiles():
 
     print(f"Loaded {len(applicants)} closed applicants.")
     build_profile_cache(closed_records)
+    save_shared_state()
 
 
 def public_state():
+    sync_shared_state()
     return {
         "applicants": state["applicants"],
         "current_index": state["current_index"],
@@ -454,6 +520,13 @@ def panel():
 
 @app.route("/api/applicant/<path:name>/profile")
 def applicant_profile(name):
+    global profile_cache
+
+    if redis_client:
+        payload = redis_client.get(PROFILE_CACHE_KEY)
+        if payload:
+            profile_cache = json.loads(payload)
+
     profile = profile_cache.get(normalize_name(name))
 
     if not profile:
@@ -487,33 +560,44 @@ def handle_go_to_applicant(data):
     except (TypeError, ValueError):
         return
 
-    if 0 <= index < len(state["applicants"]):
-        state["current_index"] = index
-        state["voting_open"] = False
-        state["votes"] = {"yes": 0, "no": 0, "maybe": 0}
-        state["voted_this_round"] = set()
-        emit("state_update", public_state(), broadcast=True)
+    with shared_state_lock():
+        sync_shared_state()
+        if 0 <= index < len(state["applicants"]):
+            state["current_index"] = index
+            state["voting_open"] = False
+            state["votes"] = {"yes": 0, "no": 0, "maybe": 0}
+            state["voted_this_round"] = set()
+            save_shared_state()
+            emit("state_update", public_state(), broadcast=True)
 
 
 @socketio.on("host_start_vote")
 def handle_start_vote():
     if not session.get("is_admin"):
         return
-    if not state["applicants"]:
-        return
 
-    state["voting_open"] = True
-    state["votes"] = {"yes": 0, "no": 0, "maybe": 0}
-    state["voted_this_round"] = set()
-    emit("state_update", public_state(), broadcast=True)
+    with shared_state_lock():
+        sync_shared_state()
+        if not state["applicants"]:
+            return
+
+        state["voting_open"] = True
+        state["votes"] = {"yes": 0, "no": 0, "maybe": 0}
+        state["voted_this_round"] = set()
+        save_shared_state()
+        emit("state_update", public_state(), broadcast=True)
 
 
 @socketio.on("host_end_vote")
 def handle_end_vote():
     if not session.get("is_admin"):
         return
-    state["voting_open"] = False
-    emit("state_update", public_state(), broadcast=True)
+
+    with shared_state_lock():
+        sync_shared_state()
+        state["voting_open"] = False
+        save_shared_state()
+        emit("state_update", public_state(), broadcast=True)
 
 
 @socketio.on("host_refresh_applicants")
@@ -522,9 +606,10 @@ def handle_refresh_applicants():
         return
 
     try:
-        load_applicants_and_profiles()
-        emit("state_update", public_state(), broadcast=True)
-        emit("applicants_refreshed", {"count": len(state["applicants"])})
+        with shared_state_lock():
+            load_applicants_and_profiles()
+            emit("state_update", public_state(), broadcast=True)
+            emit("applicants_refreshed", {"count": len(state["applicants"])})
     except Exception as exc:
         print(f"Refresh failed: {exc}")
         emit("applicants_refresh_error", {"message": str(exc)})
@@ -532,25 +617,37 @@ def handle_refresh_applicants():
 
 @socketio.on("submit_vote")
 def handle_submit_vote(data):
-    if not state["voting_open"]:
-        return
+    with shared_state_lock():
+        sync_shared_state()
+        if not state["voting_open"]:
+            return
 
-    voter_id = session.get("voter_id")
-    if not voter_id or voter_id in state["voted_this_round"]:
-        emit("already_voted")
-        return
+        voter_id = session.get("voter_id")
+        if not voter_id or voter_id in state["voted_this_round"]:
+            emit("already_voted")
+            return
 
-    choice = data.get("choice")
-    if choice not in state["votes"]:
-        return
+        choice = data.get("choice")
+        if choice not in state["votes"]:
+            return
 
-    state["votes"][choice] += 1
-    state["voted_this_round"].add(voter_id)
+        state["votes"][choice] += 1
+        state["voted_this_round"].add(voter_id)
+        save_shared_state()
 
-    emit("vote_recorded")
-    emit("state_update", public_state(), broadcast=True)
+        emit("vote_recorded")
+        emit("state_update", public_state(), broadcast=True)
+
+
+def initialize_applicants():
+    try:
+        load_applicants_and_profiles()
+    except Exception as exc:
+        print(f"Initial applicant load failed: {exc}")
+
+
+initialize_applicants()
 
 
 if __name__ == "__main__":
-    load_applicants_and_profiles()
-    socketio.run(app, host="0.0.0.0", port=5001, debug=True)
+    socketio.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
